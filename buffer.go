@@ -1,13 +1,16 @@
+// Package buffer represents a buffer that asynchronously flushes its contents.
+// It is useful for applications that need to aggregate data before writing it to an external storage.
+// A buffer can be flushed manually, or automatically when it becomes full or after an interval has elapsed, whichever comes first.
+//
+//	@update 2023-03-15 10:40:31
 package buffer
 
 import (
 	"context"
-	"errors"
-	"sync/atomic"
 	"time"
-
-	"github.com/go-logr/logr"
 )
+
+type void struct{}
 
 // Buffer is lock-free
 // It would start a background goroutine continuously consume data from channel and write to container.
@@ -18,100 +21,77 @@ import (
 type Buffer[T any] struct {
 	Config
 
-	container Container[T]
+	container Container[T] // hold data in buffer, implement Container interface
 
-	// used to free context
 	context context.Context
-	cancel  context.CancelFunc
-	// free lock for async putting data in container
-	dataChan chan T
-	// used to disable insertion into buffer
-	isClosed *atomic.Bool
+	cancel  context.CancelFunc // used to send close buffer signal
+
+	dataChan          chan T       // free lock for async putting data in container
+	flushSignalChan   chan void    // channel for flush data signal
+	cleanedSignalChan chan void    // channel for buffer cleaned up signal
+	errChan           chan<- error // channel for sending error to buffer user
 }
 
-// Config Buffer Config
+// NewBuffer return buffer in type `T`, and start handling data
 //
-//	@author kevineluo
-//	@update 2023-03-15 09:31:54
-type Config struct {
-	chanBufSize   int           // lock free channel size(when data in channel reach chanBufSize, it will block in Buffer.Put)
-	flushInterval time.Duration // automate flush data every [flushInterval] duration
-
-	logger *logr.Logger // logger implement logr.LogSinker
-}
-
-// Check check config and set default value
-//
-//	@receiver config *Config
+//	@param container Container[T]
+//	@param config Config
+//	@return buffer *Buffer[T]
+//	@return errChan <-chan error
 //	@return err error
 //	@author kevineluo
-//	@update 2023-03-15 10:11:28
-func (config *Config) Check() (err error) {
-	if config.chanBufSize == 0 {
-		config.chanBufSize = 100
-	}
-	if config.flushInterval == 0 {
-		config.flushInterval = 15 * time.Second
-	}
-	if config.logger == nil {
-		logger := logr.Discard()
-		config.logger = &logger
-	}
-	return
-}
-
-// NewBuffer return buffer in type `T`
+//	@update 2023-03-15 10:38:29
 func NewBuffer[T any](container Container[T], config Config) (buffer *Buffer[T], errChan <-chan error, err error) {
 	err = config.Check()
 	if err != nil {
 		return
 	}
-	isClosed := new(atomic.Bool)
-	isClosed.Store(false)
 	ctx, cancel := context.WithCancel(context.Background())
-	buffer = &Buffer[T]{
-		Config:    config,
-		container: container,
-		context:   ctx,
-		cancel:    cancel,
-		dataChan:  make(chan T, config.chanBufSize),
-		isClosed:  isClosed,
-	}
 	// error channel with size 1 to avoid block
 	originErrChan := make(chan error, 1)
-	go func(errChan chan<- error, atMost time.Duration) {
-		buffer.logger.Info("buffer start writer goroutine")
-		ticker := time.NewTicker(atMost)
-		for {
-			select {
-			case data := <-buffer.dataChan:
-				if err := putAndCheck(buffer, data); err != nil {
-					errChan <- err
-					buffer.container.reset()
-				}
-			case <-ticker.C:
-				if err := buffer.container.execute(); err != nil {
-					errChan <- err
-					buffer.container.reset()
-				}
-			case <-buffer.context.Done():
-				buffer.logger.Info("buffer are closing, shut down writer goroutine")
-				return
-			}
-		}
-	}(originErrChan, config.flushInterval)
-
 	errChan = originErrChan
+	buffer = &Buffer[T]{
+		Config:            config,
+		container:         container,
+		context:           ctx,
+		cancel:            cancel,
+		dataChan:          make(chan T, config.chanBufSize),
+		flushSignalChan:   make(chan void),
+		cleanedSignalChan: make(chan void),
+		errChan:           originErrChan,
+	}
+
+	// start
+	go buffer.run()
 
 	return
 }
 
-// Put element into buffer synchronously
+// Put put data into buffer async
+//
+//	@param buffer *Buffer[T]
+//	@return Put
+//	@author kevineluo
+//	@update 2023-03-15 11:09:25
 func (buffer *Buffer[T]) Put(data T) error {
-	if buffer.isClosed.Load() {
-		return errors.New("buffer is closed")
+	if buffer.closed() {
+		return ErrClosed
 	}
 	buffer.dataChan <- data
+	return nil
+}
+
+// Flush manually flush the buffer
+//
+//	@param buffer *Buffer[T]
+//	@return Flush
+//	@author kevineluo
+//	@update 2023-03-15 11:01:42
+func (buffer *Buffer[T]) Flush() error {
+	if buffer.closed() {
+		return ErrClosed
+	}
+	buffer.flushSignalChan <- void{}
 	return nil
 }
 
@@ -119,12 +99,76 @@ func (buffer *Buffer[T]) Put(data T) error {
 // 1. wait channel to be empty and close channel
 // 2. flush data in container synchronously
 func (buffer *Buffer[T]) Close() error {
-	buffer.isClosed.Store(true)
-	// wait until buffer is empty
-	for len(buffer.dataChan) != 0 {
+	if buffer.closed() {
+		return ErrClosed
 	}
-	// shutdown goroutine
+
+	// call cancel func to prevent buffer.Put, buffer.Flush and buffer.Close
 	buffer.cancel()
+
+	// wait till buffer cleaned up(buffer.cleanedSignalChan be closed by buffer.run goroutine)
+	<-buffer.cleanedSignalChan
 	close(buffer.dataChan)
-	return buffer.container.execute()
+	close(buffer.flushSignalChan)
+	return nil
+}
+
+// run start handling data
+//
+//	@param buffer *Buffer[T]
+//	@return run
+//	@author kevineluo
+//	@update 2023-03-15 10:34:29
+func (buffer *Buffer[T]) run() {
+	buffer.logger.Info("start buffer writer goroutine")
+
+	ticker := time.NewTicker(buffer.flushInterval)
+	defer ticker.Stop()
+
+	// send buffer cleaned up signal
+	defer close(buffer.cleanedSignalChan)
+
+	for {
+		select {
+		case data := <-buffer.dataChan:
+			// receive one piece of data
+			if err := putAndCheck(buffer, data); err != nil {
+				buffer.errChan <- err
+			}
+		case <-ticker.C:
+			// automate flush buffer
+			if err := buffer.container.execute(); err != nil {
+				buffer.errChan <- err
+			}
+			buffer.container.reset()
+		case <-buffer.context.Done():
+			// receive buffer close signal, clean up buffer and return
+			if err := buffer.container.execute(); err != nil {
+				buffer.errChan <- err
+			}
+			buffer.container.reset()
+			return
+		case <-buffer.flushSignalChan:
+			// manually flush buffer
+			if err := buffer.container.execute(); err != nil {
+				buffer.errChan <- err
+			}
+			buffer.container.reset()
+		}
+	}
+}
+
+// closed check if the Buffer is closed
+//
+//	@param buffer *Buffer[T]
+//	@return closed
+//	@author kevineluo
+//	@update 2023-03-15 11:09:03
+func (buffer *Buffer[T]) closed() bool {
+	select {
+	case <-buffer.context.Done():
+		return true
+	default:
+		return false
+	}
 }

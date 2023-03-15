@@ -10,7 +10,7 @@ import (
 )
 
 func TestArrayContainer(t *testing.T) {
-	arrayContainer := NewArrayContainer[int](10, false, func(array []int) error {
+	arrayContainer := NewArrayContainer(10, false, func(array []int) error {
 		fmt.Printf("%v\n", array)
 		return nil
 	})

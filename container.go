@@ -11,7 +11,7 @@ type Container[T any] interface {
 	execute() error
 	// isFull return true if this container is full, then should call `execute` to reset the container
 	isFull() bool
-	// recover will be called when error arisen
+	// reset will be called after execute be called, no matter execute success or not
 	reset()
 }
 
@@ -34,6 +34,7 @@ func putAndCheck[T any](buffer *Buffer[T], data T) error {
 			buffer.logger.Error(err, "error when call Container.execute")
 			return err
 		}
+		buffer.container.reset()
 	}
 
 	return nil
