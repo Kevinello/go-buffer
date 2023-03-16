@@ -18,5 +18,5 @@ Compatible with various data types (Container), providing error handling and sec
 ## Install
 
 ```shell
-go install github.com/Kevinello/go-buffer@latest
+go get github.com/Kevinello/go-buffer@latest
 ```
