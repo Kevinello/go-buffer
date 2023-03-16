@@ -33,9 +33,11 @@ func putAndCheck[T any](buffer *Buffer[T], data T) {
 
 	if buffer.container.isFull() {
 		buffer.logger.Info("buffer if full, will call container.flush")
+		buffer.ticker.Stop()
 		if err := buffer.container.flush(); err != nil {
 			buffer.logger.Error(err, "error when call Container.execute")
 			buffer.errChan <- err
 		}
+		buffer.ticker.Reset(buffer.flushInterval)
 	}
 }

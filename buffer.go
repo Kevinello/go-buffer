@@ -26,6 +26,7 @@ type Buffer[T any] struct {
 	context context.Context
 	cancel  context.CancelFunc // used to send close buffer signal
 
+	ticker            *time.Ticker // ticker for automate flush data
 	dataChan          chan T       // free lock for async putting data in container
 	flushSignalChan   chan void    // channel for flush data signal
 	cleanedSignalChan chan void    // channel for buffer cleaned up signal
@@ -126,8 +127,8 @@ func (buffer *Buffer[T]) Close() error {
 func (buffer *Buffer[T]) run() {
 	buffer.logger.Info("start buffer writer goroutine")
 
-	ticker := time.NewTicker(buffer.flushInterval)
-	defer ticker.Stop()
+	buffer.ticker = time.NewTicker(buffer.flushInterval)
+	defer buffer.ticker.Stop()
 
 	// send buffer cleaned up signal
 	defer close(buffer.cleanedSignalChan)
@@ -137,14 +138,14 @@ func (buffer *Buffer[T]) run() {
 		case data := <-buffer.dataChan:
 			// receive one piece of data
 			putAndCheck(buffer, data)
-		case <-ticker.C:
+		case <-buffer.ticker.C:
 			// automate flush buffer
-			ticker.Stop()
+			buffer.ticker.Stop()
 			if err := buffer.container.flush(); err != nil {
 				buffer.errChan <- err
 				buffer.container.reset()
 			}
-			ticker.Reset(buffer.flushInterval)
+			buffer.ticker.Reset(buffer.flushInterval)
 		case <-buffer.context.Done():
 			// receive buffer close signal, clean up buffer and return
 			// firstly, clean dataChan(there is no more data send into dataChan)
