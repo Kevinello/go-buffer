@@ -48,6 +48,7 @@ func TestArrayBuffer(t *testing.T) {
 func TestAsyncArrayBuffer(t *testing.T) {
 	arrayContainer := NewArrayContainer(10, true, func(array []int) error {
 		fmt.Printf("%v\n", array)
+		time.Sleep(time.Second)
 		return nil
 	})
 	var wg sync.WaitGroup

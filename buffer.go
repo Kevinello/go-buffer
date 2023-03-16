@@ -96,8 +96,11 @@ func (buffer *Buffer[T]) Flush() error {
 }
 
 // Close would gracefully shut down the buffer.
-// 1. wait channel to be empty and close channel
-// 2. flush data in container synchronously
+//
+//	@param buffer *Buffer[T]
+//	@return Close
+//	@author kevineluo
+//	@update 2023-03-16 11:12:33
 func (buffer *Buffer[T]) Close() error {
 	if buffer.closed() {
 		return ErrClosed
@@ -132,9 +135,7 @@ func (buffer *Buffer[T]) run() {
 		select {
 		case data := <-buffer.dataChan:
 			// receive one piece of data
-			if err := putAndCheck(buffer, data); err != nil {
-				buffer.errChan <- err
-			}
+			putAndCheck(buffer, data)
 		case <-ticker.C:
 			// automate flush buffer
 			ticker.Stop()
