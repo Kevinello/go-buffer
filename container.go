@@ -7,11 +7,13 @@ package buffer
 type Container[T any] interface {
 	// put int an element. Will NEVER check if is full so be caution.
 	put(element T) error
-	// execute will apply some action on this container. SHOULD RESET CONTAINER when called
-	execute() error
+	// flush will apply some action on this container. SHOULD RESET CONTAINER when called
+	// when it's a sync flush, container.put won't be called until flush, so Container can empty it's data
+	// when it's a async flush, container.put is still being called when doing flush, so Container should split a batch from it's data to be flushed and reset itself
+	flush() error
 	// isFull return true if this container is full, then should call `execute` to reset the container
 	isFull() bool
-	// reset will be called after execute be called, no matter execute success or not
+	// will call reset when flush return error
 	reset()
 }
 
@@ -29,12 +31,11 @@ func putAndCheck[T any](buffer *Buffer[T], data T) error {
 	}
 
 	if buffer.container.isFull() {
-		buffer.logger.Info("buffer if full, will execute batchFunc")
-		if err := buffer.container.execute(); err != nil {
+		buffer.logger.Info("buffer if full, will call container.flush")
+		if err := buffer.container.flush(); err != nil {
 			buffer.logger.Error(err, "error when call Container.execute")
 			return err
 		}
-		buffer.container.reset()
 	}
 
 	return nil

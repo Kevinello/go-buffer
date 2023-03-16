@@ -18,12 +18,12 @@ func TestArrayContainer(t *testing.T) {
 		arrayContainer.put(i)
 	}
 	assert.Equal(t, 10, len(arrayContainer.array))
-	arrayContainer.execute()
+	arrayContainer.flush()
 	for i := 0; i < 4; i++ {
 		arrayContainer.put(i)
 	}
 	assert.Equal(t, 4, len(arrayContainer.array))
-	arrayContainer.execute()
+	arrayContainer.flush()
 	assert.Equal(t, 0, len(arrayContainer.array))
 }
 

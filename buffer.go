@@ -137,23 +137,25 @@ func (buffer *Buffer[T]) run() {
 			}
 		case <-ticker.C:
 			// automate flush buffer
-			if err := buffer.container.execute(); err != nil {
+			ticker.Stop()
+			if err := buffer.container.flush(); err != nil {
 				buffer.errChan <- err
+				buffer.container.reset()
 			}
-			buffer.container.reset()
+			ticker.Reset(buffer.flushInterval)
 		case <-buffer.context.Done():
 			// receive buffer close signal, clean up buffer and return
-			if err := buffer.container.execute(); err != nil {
+			if err := buffer.container.flush(); err != nil {
 				buffer.errChan <- err
+				buffer.container.reset()
 			}
-			buffer.container.reset()
 			return
 		case <-buffer.flushSignalChan:
 			// manually flush buffer
-			if err := buffer.container.execute(); err != nil {
+			if err := buffer.container.flush(); err != nil {
 				buffer.errChan <- err
+				buffer.container.reset()
 			}
-			buffer.container.reset()
 		}
 	}
 }

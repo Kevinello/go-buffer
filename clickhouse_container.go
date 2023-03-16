@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"context"
+
 	"github.com/ClickHouse/ch-go"
 	"github.com/ClickHouse/ch-go/chpool"
 	"github.com/ClickHouse/ch-go/proto"
@@ -43,7 +44,7 @@ func (container *ClickHouseContainer) put(element ClickHouseRow) error {
 	return nil
 }
 
-func (container *ClickHouseContainer) execute() error {
+func (container *ClickHouseContainer) flush() error {
 	if container.size == 0 {
 		return nil
 	}

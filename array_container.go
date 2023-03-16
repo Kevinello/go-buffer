@@ -28,7 +28,7 @@ func (container *ArrayContainer[T]) put(element T) error {
 	return nil
 }
 
-func (container *ArrayContainer[T]) execute() error {
+func (container *ArrayContainer[T]) flush() error {
 	if container.isExecuteAsync {
 		go func(array []T, batchFunc func(array []T) error) {
 			log.Println(fmt.Sprintf("buffer execute batch(%d) asynchronously", len(array)))
@@ -36,8 +36,14 @@ func (container *ArrayContainer[T]) execute() error {
 				log.Println("fail to execute batch function asynchronously")
 				panic(err)
 			}
-		}(container.array, container.batchFunc)
-		container.array = make([]T, 0, container.size)
+		}(container.array[:container.size], container.batchFunc)
+		newArray := make([]T, 0, container.size)
+		if len(container.array) > container.size {
+			container.array = append(newArray, container.array[container.size:]...)
+		} else {
+			container.array = newArray
+		}
+
 	} else {
 		log.Println(fmt.Sprintf("buffer execute batch(%d) synchronously", len(container.array)))
 		if err := container.batchFunc(container.array); err != nil {
