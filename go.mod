@@ -3,7 +3,7 @@ module github.com/Kevinello/buffer
 go 1.20
 
 retract (
-	v0.0.1 // erroneously released versions
+	[v0.0.1, v0.0.2] // erroneously released versions
 )
 
 require (

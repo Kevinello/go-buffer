@@ -20,3 +20,10 @@ Compatible with various data types (Container), providing error handling and sec
 ```shell
 go get github.com/Kevinello/go-buffer@latest
 ```
+
+### ⚠️ Retracted versions
+
+Versions released **erroneously**, Please do not install these versions([retracted versions](https://go.dev/ref/mod#go-mod-file-retract))
+
+- v0.0.1
+- v0.0.2
