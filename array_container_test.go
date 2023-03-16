@@ -28,8 +28,10 @@ func TestArrayContainer(t *testing.T) {
 }
 
 func TestArrayBuffer(t *testing.T) {
+	count := 0
 	arrayContainer := NewArrayContainer(3, false, func(array []int) error {
-		fmt.Printf("%v\n", array)
+		count += len(array)
+		fmt.Printf("flush array: %v, totally flushed: %d\n", array, count)
 		return nil
 	})
 	buffer, _, _ := NewBuffer[int](arrayContainer, Config{
@@ -46,15 +48,16 @@ func TestArrayBuffer(t *testing.T) {
 }
 
 func TestAsyncArrayBuffer(t *testing.T) {
+	count := 0
 	arrayContainer := NewArrayContainer(10, true, func(array []int) error {
-		fmt.Printf("%v\n", array)
-		time.Sleep(time.Second)
+		count += len(array)
+		fmt.Printf("flush array: %v, totally flushed: %d\n", array, count)
 		return nil
 	})
 	var wg sync.WaitGroup
 	wg.Add(10)
 	buffer, _, _ := NewBuffer[int](arrayContainer, Config{
-		chanBufSize:   1,
+		chanBufSize:   0,
 		flushInterval: time.Second,
 	})
 

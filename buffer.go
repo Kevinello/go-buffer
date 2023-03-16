@@ -1,4 +1,4 @@
-// Package buffer represents a buffer that asynchronously flushes its contents.
+// Package buffer represents a Generic buffer that asynchronously flushes its contents.
 // It is useful for applications that need to aggregate data before writing it to an external storage.
 // A buffer can be flushed manually, or automatically when it becomes full or after an interval has elapsed, whichever comes first.
 //
@@ -32,7 +32,8 @@ type Buffer[T any] struct {
 	errChan           chan<- error // channel for sending error to buffer user
 }
 
-// NewBuffer return buffer in type `T`, and start handling data
+// NewBuffer creates a buffer in type `T`, and start handling data
+// return the buffer and a error channel for user to handle error from putting data and flushing data
 //
 //	@param container Container[T]
 //	@param config Config
@@ -61,7 +62,7 @@ func NewBuffer[T any](container Container[T], config Config) (buffer *Buffer[T],
 		errChan:           originErrChan,
 	}
 
-	// start
+	// active buffer
 	go buffer.run()
 
 	return
@@ -146,11 +147,21 @@ func (buffer *Buffer[T]) run() {
 			ticker.Reset(buffer.flushInterval)
 		case <-buffer.context.Done():
 			// receive buffer close signal, clean up buffer and return
-			if err := buffer.container.flush(); err != nil {
-				buffer.errChan <- err
-				buffer.container.reset()
+			// firstly, clean dataChan(there is no more data send into dataChan)
+			for {
+				select {
+				case data := <-buffer.dataChan:
+					// receive one piece of data
+					putAndCheck(buffer, data)
+				default:
+					// call last flush
+					if err := buffer.container.flush(); err != nil {
+						buffer.errChan <- err
+						buffer.container.reset()
+					}
+					return
+				}
 			}
-			return
 		case <-buffer.flushSignalChan:
 			// manually flush buffer
 			if err := buffer.container.flush(); err != nil {

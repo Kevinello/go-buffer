@@ -8,8 +8,9 @@ type Container[T any] interface {
 	// put int an element. Will NEVER check if is full so be caution.
 	put(data T) error
 	// flush will apply some action on this container. SHOULD RESET CONTAINER when called
-	// when it's a sync flush, container.put won't be called until flush, so Container can empty it's data
-	// when it's a async flush, container.put is still being called when doing flush, so Container should split a batch from it's data to be flushed and reset itself
+	// when it's a sync flush, container.put will be blocked until flush, so Container can empty it's data
+	// when it's a async flush, please set the chanBufSize to 0 to block container.put,
+	// or container.put will still being called when doing flush, so Container should split a batch from it's data to be flushed and reset itself
 	flush() error
 	// isFull return true if this container is full
 	isFull() bool
