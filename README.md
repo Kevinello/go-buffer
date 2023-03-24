@@ -27,3 +27,19 @@ Versions released **erroneously**, Please do not install these versions([retract
 
 - v0.0.1
 - v0.0.2
+
+## Usage
+
+![Life Cycle](./images/buffer.drawio.svg)
+
+## Project Structure
+
+![Project Structure](./images/project-structure.svg)
+
+## TODO
+
+- add test and benchmark
+
+## Contribution & Support
+
+Feel free to send a pull request if you consider there's something which can be improved. Also, please open up an issue if you run into a problem when using benchvisual or just have a question.
