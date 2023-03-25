@@ -34,7 +34,7 @@ Versions released **erroneously**, Please do not install these versions([retract
 
 ## Project Structure
 
-![Project Structure](./images/project-structure.svg)
+![Project Structure](https://raw.githubusercontent.com/Kevinello/go-buffer/diagram/images/buffer.drawio.svg)
 
 ## TODO
 

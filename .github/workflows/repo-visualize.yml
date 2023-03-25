@@ -18,7 +18,5 @@ jobs:
         uses: githubocto/repo-visualizer@main
         with:
           excluded_paths: ".gitignore,.github"
-          should_push: false
-          artifact_name: "project-structure"
-          output_file: "project-structure.svg"
-          # branch: diagram
+          output_file: "images/project-structure.svg"
+          branch: diagram
