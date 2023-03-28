@@ -107,3 +107,14 @@ func (container *ArrayContainer[T]) Reset() {
 func (container *ArrayContainer[T]) Len() int {
 	return len(container.array)
 }
+
+// Index index and return target element
+//
+//	@receiver container *ArrayContainer
+//	@param idx int
+//	@return T
+//	@author kevineluo
+//	@update 2023-03-28 07:31:26
+func (container *ArrayContainer[T]) Index(idx int) T {
+	return container.array[idx]
+}
