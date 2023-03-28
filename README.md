@@ -27,6 +27,7 @@ Versions released **erroneously**, Please do not install these versions([retract
 
 - v0.0.1
 - v0.0.2
+- v0.1.0
 
 ## Usage
 
