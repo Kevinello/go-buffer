@@ -52,7 +52,7 @@ type Buffer[T any] struct {
 //	@author kevineluo
 //	@update 2023-03-15 10:38:29
 func NewBuffer[T any](container container.Container[T], config Config) (buffer *Buffer[T], errChan <-chan error, err error) {
-	err = config.Check()
+	err = config.Validate()
 	if err != nil {
 		return
 	}
@@ -65,7 +65,7 @@ func NewBuffer[T any](container container.Container[T], config Config) (buffer *
 		container:         container,
 		context:           ctx,
 		cancel:            cancel,
-		dataChan:          make(chan T, config.chanBufSize),
+		dataChan:          make(chan T, config.ChanBufSize),
 		flushSignalChan:   make(chan *flushSignal),
 		cleanedSignalChan: make(chan void),
 		errChan:           originErrChan,
@@ -147,10 +147,10 @@ func (buffer *Buffer[T]) Close() error {
 //	@author kevineluo
 //	@update 2023-03-15 10:34:29
 func (buffer *Buffer[T]) run() {
-	buffer.logger.Info("buffer start handling data", "ID", buffer.ID)
+	buffer.Logger.Info("buffer start handling data", "ID", buffer.ID)
 
-	buffer.ticker = time.NewTicker(buffer.flushInterval)
-	if buffer.disableAutoFlush {
+	buffer.ticker = time.NewTicker(buffer.FlushInterval)
+	if buffer.DisableAutoFlush {
 		buffer.ticker.Stop()
 	} else {
 		defer buffer.ticker.Stop()
@@ -167,24 +167,24 @@ func (buffer *Buffer[T]) run() {
 			putAndCheck(buffer, data)
 		case <-buffer.ticker.C:
 			// automate flush buffer(will temporarily stop the timer)
-			buffer.logger.Info("tick for automate flush data reach, will call container.Flush")
+			buffer.Logger.Info("tick for automate flush data reach, will call container.Flush")
 			buffer.ticker.Stop()
-			if buffer.syncAutoFlush {
+			if buffer.SyncAutoFlush {
 				if err := buffer.container.Flush(); err != nil {
-					buffer.logger.Error(err, "error when call Container.Flush")
+					buffer.Logger.Error(err, "error when call Container.Flush")
 					buffer.errChan <- err
 					buffer.container.Reset()
 				}
 			} else {
 				go func() {
 					if err := buffer.container.Flush(); err != nil {
-						buffer.logger.Error(err, "error when call Container.Flush")
+						buffer.Logger.Error(err, "error when call Container.Flush")
 						buffer.errChan <- err
 						buffer.container.Reset()
 					}
 				}()
 			}
-			buffer.ticker.Reset(buffer.flushInterval)
+			buffer.ticker.Reset(buffer.FlushInterval)
 		case <-buffer.context.Done():
 			// receive buffer close signal, clean up buffer and return
 			// firstly, clean dataChan(there is no more data send into dataChan)
@@ -196,7 +196,7 @@ func (buffer *Buffer[T]) run() {
 				default:
 					// call last flush
 					if err := buffer.container.Flush(); err != nil {
-						buffer.logger.Error(err, "error when call Container.Flush")
+						buffer.Logger.Error(err, "error when call Container.Flush")
 						buffer.errChan <- err
 						buffer.container.Reset()
 					}
@@ -206,7 +206,7 @@ func (buffer *Buffer[T]) run() {
 		case flushSignal := <-buffer.flushSignalChan:
 			// manually flush buffer
 			if err := buffer.container.Flush(); err != nil {
-				buffer.logger.Error(err, "error when call Container.Flush")
+				buffer.Logger.Error(err, "error when call Container.Flush")
 				buffer.errChan <- err
 				buffer.container.Reset()
 			}
@@ -242,28 +242,28 @@ func (buffer *Buffer[T]) closed() bool {
 //	@update 2023-03-15 09:46:37
 func putAndCheck[T any](buffer *Buffer[T], data T) {
 	if err := buffer.container.Put(data); err != nil {
-		buffer.logger.Error(err, "buffer cannot write message to container")
+		buffer.Logger.Error(err, "buffer cannot write message to container")
 		buffer.errChan <- err
 	}
 
 	if buffer.container.IsFull() {
-		buffer.logger.Info("buffer if full, will call container.Flush")
+		buffer.Logger.Info("buffer if full, will call container.Flush")
 		buffer.ticker.Stop()
-		if buffer.syncAutoFlush {
+		if buffer.SyncAutoFlush {
 			if err := buffer.container.Flush(); err != nil {
-				buffer.logger.Error(err, "error when call Container.Flush")
+				buffer.Logger.Error(err, "error when call Container.Flush")
 				buffer.errChan <- err
 				buffer.container.Reset()
 			}
 		} else {
 			go func() {
 				if err := buffer.container.Flush(); err != nil {
-					buffer.logger.Error(err, "error when call Container.Flush")
+					buffer.Logger.Error(err, "error when call Container.Flush")
 					buffer.errChan <- err
 					buffer.container.Reset()
 				}
 			}()
 		}
-		buffer.ticker.Reset(buffer.flushInterval)
+		buffer.ticker.Reset(buffer.FlushInterval)
 	}
 }
