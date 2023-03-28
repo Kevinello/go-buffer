@@ -8,29 +8,37 @@ package buffer
 import (
 	"context"
 	"time"
+
+	"github.com/Kevinello/go-buffer/container"
 )
 
-type void struct{}
+type (
+	void        struct{}
+	flushSignal struct {
+		async bool        // determine the flush is async or not
+		done  chan<- void // for receiving flush done signal
+	}
+)
 
-// Buffer is lock-free
-// It would start a background goroutine continuously consume data from channel and write to container.
-// When container is "full", it would execute flush on container synchronously or asynchronously based on `isFlushAsync`.
+// Buffer is a lock-free buffer
+// It would start a background goroutine continuously consume data from channel and write to container
+// When container is "full", it would asynchronously flush data on container by default
 //
 //	@author kevineluo
 //	@update 2023-03-15 09:40:02
 type Buffer[T any] struct {
 	Config
 
-	container Container[T] // hold data in buffer, implement Container interface
+	container container.Container[T] // hold data in buffer, implement Container interface
 
 	context context.Context
 	cancel  context.CancelFunc // used to send close buffer signal
 
-	ticker            *time.Ticker // ticker for automate flush data
-	dataChan          chan T       // free lock for async putting data in container
-	flushSignalChan   chan void    // channel for flush data signal
-	cleanedSignalChan chan void    // channel for buffer cleaned up signal
-	errChan           chan<- error // channel for sending error to buffer user
+	ticker            *time.Ticker      // ticker for automate flush data
+	dataChan          chan T            // free lock for async putting data in container
+	flushSignalChan   chan *flushSignal // channel for flush data signal
+	cleanedSignalChan chan void         // channel for buffer cleaned up signal
+	errChan           chan<- error      // channel for sending error to buffer user
 }
 
 // NewBuffer creates a buffer in type `T`, and start handling data
@@ -43,7 +51,7 @@ type Buffer[T any] struct {
 //	@return err error
 //	@author kevineluo
 //	@update 2023-03-15 10:38:29
-func NewBuffer[T any](container Container[T], config Config) (buffer *Buffer[T], errChan <-chan error, err error) {
+func NewBuffer[T any](container container.Container[T], config Config) (buffer *Buffer[T], errChan <-chan error, err error) {
 	err = config.Check()
 	if err != nil {
 		return
@@ -58,7 +66,7 @@ func NewBuffer[T any](container Container[T], config Config) (buffer *Buffer[T],
 		context:           ctx,
 		cancel:            cancel,
 		dataChan:          make(chan T, config.chanBufSize),
-		flushSignalChan:   make(chan void),
+		flushSignalChan:   make(chan *flushSignal),
 		cleanedSignalChan: make(chan void),
 		errChan:           originErrChan,
 	}
@@ -69,7 +77,7 @@ func NewBuffer[T any](container Container[T], config Config) (buffer *Buffer[T],
 	return
 }
 
-// Put put data into buffer async
+// Put put data into buffer asynchronously
 //
 //	@param buffer *Buffer[T]
 //	@return Put
@@ -85,15 +93,29 @@ func (buffer *Buffer[T]) Put(data T) error {
 
 // Flush manually flush the buffer
 //
-//	@param buffer *Buffer[T]
-//	@return Flush
+//	@receiver buffer *Buffer
+//	@param async bool
+//	@return error
 //	@author kevineluo
-//	@update 2023-03-15 11:01:42
-func (buffer *Buffer[T]) Flush() error {
+//	@update 2023-03-27 02:00:56
+func (buffer *Buffer[T]) Flush(async bool) error {
 	if buffer.closed() {
 		return ErrClosed
 	}
-	buffer.flushSignalChan <- void{}
+
+	if !async {
+		// synchronously flush
+		done := make(chan void)
+		buffer.flushSignalChan <- &flushSignal{
+			async: async,
+			done:  done,
+		}
+		// block til flush done
+		<-done
+	} else {
+		// asynchronously flush
+		buffer.flushSignalChan <- &flushSignal{async: async}
+	}
 	return nil
 }
 
@@ -125,25 +147,42 @@ func (buffer *Buffer[T]) Close() error {
 //	@author kevineluo
 //	@update 2023-03-15 10:34:29
 func (buffer *Buffer[T]) run() {
-	buffer.logger.Info("start buffer writer goroutine")
+	buffer.logger.Info("buffer start handling data", "ID", buffer.ID)
 
 	buffer.ticker = time.NewTicker(buffer.flushInterval)
-	defer buffer.ticker.Stop()
+	if buffer.disableAutoFlush {
+		buffer.ticker.Stop()
+	} else {
+		defer buffer.ticker.Stop()
+	}
 
 	// send buffer cleaned up signal
 	defer close(buffer.cleanedSignalChan)
 
+	// main signal monitoring loop for safe buffer life cycle
 	for {
 		select {
 		case data := <-buffer.dataChan:
 			// receive one piece of data
 			putAndCheck(buffer, data)
 		case <-buffer.ticker.C:
-			// automate flush buffer
+			// automate flush buffer(will temporarily stop the timer)
+			buffer.logger.Info("tick for automate flush data reach, will call container.Flush")
 			buffer.ticker.Stop()
-			if err := buffer.container.flush(); err != nil {
-				buffer.errChan <- err
-				buffer.container.reset()
+			if buffer.syncAutoFlush {
+				if err := buffer.container.Flush(); err != nil {
+					buffer.logger.Error(err, "error when call Container.Flush")
+					buffer.errChan <- err
+					buffer.container.Reset()
+				}
+			} else {
+				go func() {
+					if err := buffer.container.Flush(); err != nil {
+						buffer.logger.Error(err, "error when call Container.Flush")
+						buffer.errChan <- err
+						buffer.container.Reset()
+					}
+				}()
 			}
 			buffer.ticker.Reset(buffer.flushInterval)
 		case <-buffer.context.Done():
@@ -156,18 +195,24 @@ func (buffer *Buffer[T]) run() {
 					putAndCheck(buffer, data)
 				default:
 					// call last flush
-					if err := buffer.container.flush(); err != nil {
+					if err := buffer.container.Flush(); err != nil {
+						buffer.logger.Error(err, "error when call Container.Flush")
 						buffer.errChan <- err
-						buffer.container.reset()
+						buffer.container.Reset()
 					}
 					return
 				}
 			}
-		case <-buffer.flushSignalChan:
+		case flushSignal := <-buffer.flushSignalChan:
 			// manually flush buffer
-			if err := buffer.container.flush(); err != nil {
+			if err := buffer.container.Flush(); err != nil {
+				buffer.logger.Error(err, "error when call Container.Flush")
 				buffer.errChan <- err
-				buffer.container.reset()
+				buffer.container.Reset()
+			}
+			if !flushSignal.async {
+				// send flush done signal for synchronously flush
+				flushSignal.done <- void{}
 			}
 		}
 	}
@@ -185,5 +230,40 @@ func (buffer *Buffer[T]) closed() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// putAndCheck put a piece of data into container and flush container when full
+//
+//	@param buffer *Buffer[T]
+//	@param data T
+//	@return error
+//	@author kevineluo
+//	@update 2023-03-15 09:46:37
+func putAndCheck[T any](buffer *Buffer[T], data T) {
+	if err := buffer.container.Put(data); err != nil {
+		buffer.logger.Error(err, "buffer cannot write message to container")
+		buffer.errChan <- err
+	}
+
+	if buffer.container.IsFull() {
+		buffer.logger.Info("buffer if full, will call container.Flush")
+		buffer.ticker.Stop()
+		if buffer.syncAutoFlush {
+			if err := buffer.container.Flush(); err != nil {
+				buffer.logger.Error(err, "error when call Container.Flush")
+				buffer.errChan <- err
+				buffer.container.Reset()
+			}
+		} else {
+			go func() {
+				if err := buffer.container.Flush(); err != nil {
+					buffer.logger.Error(err, "error when call Container.Flush")
+					buffer.errChan <- err
+					buffer.container.Reset()
+				}
+			}()
+		}
+		buffer.ticker.Reset(buffer.flushInterval)
 	}
 }

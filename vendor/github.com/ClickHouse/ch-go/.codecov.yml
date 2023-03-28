@@ -1,0 +1,12 @@
+ignore:
+  - "**/main.go"
+  - "**/*_enum.go"
+  - "*_enum.go"
+  - "./internal/cht/*"
+  - "./internal/e2e/*"
+  - "./internal/cmd/*"
+  - "./internal/gold/*"
+coverage:
+  status:
+    project: false
+    patch: false

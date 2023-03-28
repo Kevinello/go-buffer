@@ -17,6 +17,6 @@ jobs:
         name: Update diagram
         uses: githubocto/repo-visualizer@main
         with:
-          excluded_paths: ".gitignore,.github"
+          excluded_paths: ".gitignore,.github,.goreleaser.yaml"
           output_file: "images/project-structure.svg"
           branch: diagram

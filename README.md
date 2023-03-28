@@ -10,7 +10,7 @@ Compatible with various data types (Container), providing error handling and sec
 ## Features
 
 - Periodic automatic flush
-- Manually flush
+- Manually flush(async/sync)
 - Safely Close
 - Error Channel for error handling
 - Generic Support
