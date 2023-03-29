@@ -27,6 +27,7 @@ Versions released **erroneously**, Please do not install these versions([retract
 
 - v0.0.1
 - v0.0.2
+- v0.0.3
 - v0.1.0
 
 ## Usage
@@ -40,6 +41,7 @@ Versions released **erroneously**, Please do not install these versions([retract
 ## TODO
 
 - add test and benchmark
+- preset kafka container(kafka-go message)
 
 ## Contribution & Support
 

@@ -2,7 +2,7 @@ module github.com/Kevinello/go-buffer
 
 go 1.20
 
-retract [v0.0.1, v0.0.2] // erroneously released versions
+retract [v0.0.1, v0.1.0] // erroneously released versions
 
 require (
 	github.com/ClickHouse/ch-go v0.53.0
