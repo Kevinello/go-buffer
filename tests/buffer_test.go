@@ -1,6 +1,7 @@
 package buffer
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"testing"
@@ -29,7 +30,7 @@ func TestBuffer(t *testing.T) {
 			FlushInterval: 10 * time.Second,
 			SyncAutoFlush: true,
 		}
-		flushBuffer, _, err := buffer.NewBuffer[int](container, config)
+		flushBuffer, _, err := buffer.NewBuffer[int](context.Background(), container, config)
 		So(err, ShouldBeNil)
 
 		Reset(func() {
@@ -52,13 +53,13 @@ func TestBuffer(t *testing.T) {
 			})
 
 			Convey("The buffer should have been automatically flushed once, and the output should have 10 elements", func() {
-				// wait 1s for buffer to consume data and store it into container
+				// wait 100ms for buffer to consume data and store it into container
 				time.Sleep(100 * time.Millisecond)
 				So(output, ShouldHaveLength, 10)
 			})
 
 			Convey("When manually flush the buffer synchronously", func() {
-				// wait 1s for buffer to consume data and store it into container
+				// wait 100ms for buffer to consume data and store it into container
 				time.Sleep(100 * time.Millisecond)
 				err := flushBuffer.Flush(false)
 				So(err, ShouldBeNil)
@@ -69,12 +70,12 @@ func TestBuffer(t *testing.T) {
 			})
 
 			Convey("When manually flush the buffer asynchronously", func() {
-				// wait 1s for buffer to consume data and store it into container
+				// wait 100ms for buffer to consume data and store it into container
 				time.Sleep(100 * time.Millisecond)
 				err := flushBuffer.Flush(true)
 				So(err, ShouldBeNil)
 
-				// wait 1s for buffer's async flush
+				// wait 100ms for buffer's async flush
 				time.Sleep(100 * time.Millisecond)
 
 				// Then the container should be empty, and the output should have 5 elements
@@ -93,10 +94,11 @@ func TestBuffer(t *testing.T) {
 				err := flushBuffer.Close()
 				So(err, ShouldBeNil)
 
-				Convey("Then the container should be empty, and the output should have 8 elements", func() {
-					So(container.Len(), ShouldEqual, 0)
-					So(output, ShouldHaveLength, 8)
-				})
+				// wait 1s for buffer's cleanup
+				time.Sleep(1 * time.Second)
+
+				So(container.Len(), ShouldEqual, 0)
+				So(output, ShouldHaveLength, 8)
 
 				Convey("When try to put data into buffer / manually flush buffer / close buffer again when it has been closed", func() {
 					err = flushBuffer.Put(999)

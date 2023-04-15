@@ -14,6 +14,7 @@ Compatible with various data types (Container), providing error handling and sec
 - Safely Close
 - Error Channel for error handling
 - Generic Support
+- Asynchronous cancellations and timeouts using Go contexts
 
 ## Install
 
